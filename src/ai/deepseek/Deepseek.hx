@@ -71,9 +71,7 @@ class Deepseek implements IApi {
 		this.baseUrl = stripSlash(this.config.baseUrl != null ? this.config.baseUrl : DEFAULT_BASE_URL);
 		this.defaultModel = this.config.defaultModel != null ? this.config.defaultModel : DEFAULT_MODEL;
 		this.timeoutMs = this.config.timeoutMs != null ? this.config.timeoutMs : 120000;
-
-		var key = this.config.apiKey != null ? this.config.apiKey : Sys.getEnv("DEEPSEEK_API_KEY");
-		this.apiKey = key != null ? key : "";
+		this.apiKey = this.config.apiKey != null ? this.config.apiKey : "";
 	}
 
 	// ------------------------------------------------------------------

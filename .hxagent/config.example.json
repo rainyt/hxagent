@@ -1,0 +1,16 @@
+{
+  "provider": "deepseek",
+  "deepseek": {
+    "api_key": "sk-your-deepseek-api-key",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-chat",
+    "temperature": 1.0,
+    "max_tokens": 4096,
+    "timeout_ms": 120000,
+    "max_retries": 2
+  },
+  "agent": {
+    "system_prompt": "你是一个运行在终端里的 AI 助手，可以使用工具读取本机文件。请用中文简洁回答。",
+    "max_iterations": 10
+  }
+}

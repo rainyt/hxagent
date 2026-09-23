@@ -3,15 +3,17 @@ package;
 import agent.AgentEvent;
 import agent.TaskLoop;
 import agent.TaskLoopOptions;
-import ai.deepseek.Deepseek;
+import ai.Provider;
 import api.IApi;
 import api.tools.Read;
 import api.tools.ToolRegistry;
 import cli.LineResult;
 import cli.Terminal;
+import config.Config;
 
 /**
- * 终端 Agent 入口：读取用户输入 -> 交给 TaskLoop（含工具调用闭环）-> 流式展示过程。
+ * 终端 Agent 入口：读取输入 -> TaskLoop（含工具调用闭环）-> 流式展示过程。
+ * API 平台 / 密钥 / 模型等均来自 .hxagent/config.json。
  */
 class Main {
 	/** ANSI 转义符。 */
@@ -22,22 +24,45 @@ class Main {
 	static function main() {
 		Terminal.setup(); // Windows 下切换控制台到 UTF-8，修复中文乱码
 
-		var model = Sys.getEnv("DEEPSEEK_MODEL");
-		var api:IApi = new Deepseek({
-			defaultModel: model != null ? model : "deepseek-v4-flash"
-		});
-
-		var tools = new ToolRegistry().add(new Read());
-		taskLoop = new TaskLoop(api, tools, {
-			systemPrompt: "你是一个运行在终端里的 AI 助手。需要查看本机文件时请调用 Read 工具，再根据内容回答。请用中文简洁回答。"
-		});
-
-		var key = Sys.getEnv("DEEPSEEK_API_KEY");
-		if (key == null || key == "") {
-			Sys.println("提示: 未设置 DEEPSEEK_API_KEY 环境变量，请求会返回 401。");
+		// ---- 加载配置 ----
+		var config:Config = null;
+		try {
+			config = Config.load();
+		} catch (e:haxe.Exception) {
+			Sys.println("配置错误: " + e.message);
+			return;
+		}
+		if (config == null) {
+			Sys.println("未找到配置文件，请创建: " + Config.defaultPath());
+			Sys.println('示例: {"provider":"deepseek","deepseek":{"api_key":"sk-xxx"}}');
+			return;
+		}
+		if (config.apiKey() == null || config.apiKey() == "") {
+			Sys.println('警告: 平台 "${config.provider}" 未配置 api_key。');
 		}
 
-		Sys.println("hxagent - 输入内容后回车发送；/reset 清空上下文；Ctrl+C / Ctrl+D 退出。");
+		// ---- 按平台创建 API ----
+		var api:IApi;
+		try {
+			api = Provider.create(config);
+		} catch (e:haxe.Exception) {
+			Sys.println("初始化失败: " + e.message);
+			return;
+		}
+
+		// ---- 注册工具 + 组装循环 ----
+		var tools = new ToolRegistry().add(new Read());
+		taskLoop = new TaskLoop(api, tools, {
+			systemPrompt: config.systemPrompt(),
+			model: config.model(),
+			temperature: config.temperature(),
+			maxTokens: config.maxTokens(),
+			maxIterations: config.maxIterations()
+		});
+
+		var modelName = config.model();
+		Sys.println('hxagent - 平台: ${config.provider}，模型: ${modelName != null ? modelName : "默认"}');
+		Sys.println("输入内容后回车发送；/reset 清空上下文；Ctrl+C / Ctrl+D 退出。");
 		Sys.println("");
 
 		while (true) {

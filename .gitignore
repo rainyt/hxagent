@@ -1,0 +1,6 @@
+# 本地配置（含密钥，勿提交）
+.hxagent/config.json
+
+# Haxe
+*.hxml.d/
+dump/
