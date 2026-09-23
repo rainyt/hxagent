@@ -4,3 +4,4 @@
 # Haxe
 *.hxml.d/
 dump/
+test.txt
