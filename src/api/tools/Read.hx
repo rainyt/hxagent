@@ -2,7 +2,9 @@ package api.tools;
 
 import api.ToolDefinition;
 import haxe.io.Bytes;
+import haxe.io.BytesBuffer;
 import haxe.io.Eof;
+import util.Utf8;
 
 /**
  * Read 工具：读取本机上的文本文件，供 AI 读取代码 / 文档 / 配置等。
@@ -76,16 +78,26 @@ class Read implements ITool {
 
 	/** 读取指定行区间，返回带行号文本。 */
 	static function readLines(path:String, offset:Int, limit:Int):String {
-		var input = sys.io.File.read(path, false);
+		var input = sys.io.File.read(path, true);
 		var sb = new StringBuf();
+		var lineBuf = new BytesBuffer();
 		var lineNo = 0;
 		var shown = 0;
 		var bytes = 0;
 		var truncated = false;
 
+		// 逐字节读取并按 \n 切行，再用 Utf8.safe 宽容解码（支持非 UTF-8 文件）
 		try {
 			while (true) {
-				var line = input.readLine();
+				var c = input.readByte();
+				if (c != 10) {
+					lineBuf.addByte(c);
+					continue;
+				}
+				var line = Utf8.safe(lineBuf.getBytes());
+				lineBuf = new BytesBuffer();
+				if (StringTools.endsWith(line, "\r"))
+					line = line.substr(0, line.length - 1);
 				lineNo++;
 				if (lineNo < offset) continue;
 				if (shown >= limit || bytes >= MAX_BYTES) {
@@ -100,7 +112,22 @@ class Read implements ITool {
 				bytes += line.length + 1;
 			}
 		} catch (e:Eof) {
-			// 正常读到文件末尾
+			// 文件末尾可能没有换行符
+			if (lineBuf.length > 0) {
+				var line = Utf8.safe(lineBuf.getBytes());
+				if (StringTools.endsWith(line, "\r"))
+					line = line.substr(0, line.length - 1);
+				lineNo++;
+				if (lineNo >= offset && shown < limit && bytes < MAX_BYTES) {
+					sb.add(lineNo);
+					sb.add("→");
+					sb.add(line);
+					sb.add("\n");
+					shown++;
+				} else if (lineNo >= offset) {
+					truncated = true;
+				}
+			}
 		}
 		input.close();
 

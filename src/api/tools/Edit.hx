@@ -79,8 +79,13 @@ class Edit implements ITool {
 		var content:String;
 		try {
 			var input = sys.io.File.read(path, true);
-			content = input.readAll().toString();
+			var raw = input.readAll();
 			input.close();
+			try {
+				content = raw.toString();
+			} catch (e:Dynamic) {
+				return fail('文件不是有效 UTF-8 编码，无法安全编辑: $path');
+			}
 		} catch (e:Dynamic) {
 			return fail('读取失败: ' + Std.string(e));
 		}

@@ -3,6 +3,7 @@ package cli;
 import haxe.io.Bytes;
 import haxe.io.BytesBuffer;
 import haxe.io.Eof;
+import util.Utf8;
 
 /**
  * 终端行输入器。
@@ -46,7 +47,7 @@ class Terminal {
 				b = Sys.stdin().readByte();
 			} catch (e:Eof) {
 				// 输入流结束：若已读到内容则返回该行，否则报告 EOF。
-				return buf.length > 0 ? Line(buf.getBytes().toString()) : Eof;
+				return buf.length > 0 ? Line(Utf8.safe(buf.getBytes())) : Eof;
 			}
 
 			if (b == 10) // '\n'
@@ -56,7 +57,7 @@ class Terminal {
 
 			buf.addByte(b);
 		}
-		return Line(buf.getBytes().toString());
+		return Line(Utf8.safe(buf.getBytes()));
 	}
 
 	/**
@@ -132,15 +133,15 @@ class Terminal {
 		var out = Bytes.alloc(bytes.length);
 		for (i in 0...bytes.length)
 			out.set(i, bytes[i] & 0xFF);
-		Sys.print(out.toString());
+		Sys.stdout().writeBytes(out, 0, out.length); // 按字节直写，不做 UTF-8 校验
 	}
 
-	/** 把字节数组还原成 Haxe 字符串（字节原样保留）。 */
+	/** 把字节数组还原成 Haxe 字符串（非 UTF-8 字节以 U+FFFD 代替）。 */
 	static function bytesToString(data:Array<Int>):String {
 		var out = Bytes.alloc(data.length);
 		for (i in 0...data.length)
 			out.set(i, data[i] & 0xFF);
-		return out.toString();
+		return Utf8.safe(out);
 	}
 
 	/**

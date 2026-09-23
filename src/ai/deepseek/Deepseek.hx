@@ -20,7 +20,6 @@ import haxe.Json;
 import haxe.ds.IntMap;
 import haxe.io.Bytes;
 import haxe.io.BytesBuffer;
-import sys.Http;
 import util.Utf8;
 
 /**
@@ -249,7 +248,7 @@ class Deepseek implements IApi {
 			finalize();
 		});
 
-		var http = new Http(baseUrl + "/chat/completions");
+		var http = new RawHttp(baseUrl + "/chat/completions");
 		http.cnxTimeout = timeoutMs / 1000;
 		http.setHeader("Content-Type", "application/json");
 		http.setHeader("Accept", stream ? "text/event-stream" : "application/json");
@@ -278,7 +277,7 @@ class Deepseek implements IApi {
 
 	public function listModels(onResult:ApiResult<Array<ModelInfo>>->Void):Cancelable {
 		var cancelled = false;
-		var http = new Http(baseUrl + "/models");
+		var http = new RawHttp(baseUrl + "/models");
 		http.cnxTimeout = timeoutMs / 1000;
 		http.setHeader("Authorization", "Bearer " + apiKey);
 		http.setHeader("Accept", "application/json");
@@ -461,7 +460,7 @@ class Deepseek implements IApi {
 	// 工具
 	// ------------------------------------------------------------------
 
-	function applyHeaders(http:Http):Void {
+	function applyHeaders(http:RawHttp):Void {
 		if (config.headers == null) return;
 		for (k in config.headers.keys()) {
 			var v = config.headers.get(k);
@@ -478,7 +477,8 @@ class Deepseek implements IApi {
 
 /**
  * 把响应体按 `\n` 切行推送给 onLine（用于 SSE），同时缓存原始字节。
- * `sys.Http.customRequest` 会把响应边读边写入本 Output。
+ * `RawHttp.customRequest` 会把响应边读边写入本 Output（RawHttp 是修复了 chunked
+ * 多字节解码问题的 sys.Http 拷贝）。
  */
 private class ResponseSink extends haxe.io.Output {
 	var raw = new BytesBuffer();

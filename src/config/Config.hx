@@ -76,7 +76,7 @@ class Config {
 		if (!FileSystem.exists(p))
 			return null;
 
-		var text = File.getContent(p);
+		var text = util.Utf8.safe(sys.io.File.getBytes(p));
 		var raw:Dynamic;
 		try {
 			raw = Json.parse(text);
