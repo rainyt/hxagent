@@ -21,6 +21,7 @@ import haxe.ds.IntMap;
 import haxe.io.Bytes;
 import haxe.io.BytesBuffer;
 import sys.Http;
+import util.Utf8;
 
 /**
  * 工具调用流式累积的中间态。
@@ -233,7 +234,7 @@ class Deepseek implements IApi {
 			if (cancelled || errorEmitted) return;
 			if (!stream) {
 				var bytes = sink.takeRaw();
-				var body = bytes != null ? bytes.toString() : "";
+				var body = bytes != null ? Utf8.safe(bytes) : "";
 				if (StringTools.trim(body) == "") {
 					fail("空响应");
 					return;
@@ -254,7 +255,14 @@ class Deepseek implements IApi {
 		http.setHeader("Accept", stream ? "text/event-stream" : "application/json");
 		http.setHeader("Authorization", "Bearer " + apiKey);
 		applyHeaders(http);
-		http.setPostData(Json.stringify(buildPayload(request, stream)));
+		var bodyJson:String;
+		try {
+			bodyJson = Json.stringify(buildPayload(request, stream));
+		} catch (e:Dynamic) {
+			fail("构造请求失败（历史中可能含非法 UTF-8）: " + Std.string(e));
+			return {cancel: function() cancelled = true};
+		}
+		http.setPostData(bodyJson);
 		http.onError = function(e:String) {
 			if (cancelled || errorEmitted) return;
 			errorEmitted = true;
@@ -497,7 +505,7 @@ private class ResponseSink extends haxe.io.Output {
 			for (i in 0...len) {
 				if (buf.get(pos + i) == 10) { // '\n'
 					lineBuf.addBytes(buf, pos + start, i - start + 1);
-					var line = lineBuf.getBytes().toString();
+					var line = Utf8.safe(lineBuf.getBytes());
 					lineBuf = new BytesBuffer();
 					onLine(line);
 					start = i + 1;
@@ -511,7 +519,7 @@ private class ResponseSink extends haxe.io.Output {
 
 	override public function close():Void {
 		if (onLine != null && lineBuf.length > 0) {
-			var line = lineBuf.getBytes().toString();
+			var line = Utf8.safe(lineBuf.getBytes());
 			lineBuf = new BytesBuffer();
 			onLine(line);
 		}
@@ -527,6 +535,6 @@ private class ResponseSink extends haxe.io.Output {
 
 	public function bodyString():String {
 		var b = takeRaw();
-		return b != null ? b.toString() : "";
+		return b != null ? Utf8.safe(b) : "";
 	}
 }

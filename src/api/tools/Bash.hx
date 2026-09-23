@@ -3,6 +3,7 @@ package api.tools;
 import api.ToolDefinition;
 import haxe.io.Bytes;
 import sys.io.Process;
+import util.Utf8;
 
 /**
  * Bash 工具：执行一条 POSIX shell 命令行，返回合并后的输出与退出码，供 AI 运行测试、构建、git 等。
@@ -73,7 +74,7 @@ class Bash implements ITool {
 		// stderr 已在脚本内合并到 stdout，只需读一路，不会死锁
 		var output = "";
 		try {
-			output = proc.stdout.readAll().toString();
+			output = Utf8.safe(proc.stdout.readAll());
 		} catch (e:Dynamic) {}
 
 		var code = 0;
