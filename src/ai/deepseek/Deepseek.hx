@@ -97,6 +97,7 @@ class Deepseek implements IApi {
 		var accUsage:Usage = null;
 		var lastRaw:Dynamic = null;
 		var started = false;
+		var sawDone = false;
 
 		function ensureStart():Void {
 			if (!started) {
@@ -108,6 +109,7 @@ class Deepseek implements IApi {
 		function fail(message:String, ?raw:Dynamic):Void {
 			if (errorEmitted) return;
 			errorEmitted = true;
+			Sys.stderr().writeString('[deepseek] 失败: ' + message + '\n');
 			onEvent(Error({message: message, raw: raw}));
 		}
 
@@ -181,6 +183,8 @@ class Deepseek implements IApi {
 		function finalize():Void {
 			if (cancelled || errorEmitted) return;
 			ensureStart();
+			Sys.stderr().writeString('[deepseek] 流结束: finish=' + Std.string(accFinish) + ' done=' + sawDone
+				+ ' text=' + accText.length + ' reasoning=' + accReasoning.length + ' tools=' + toolOrder.length + '\n');
 
 			var calls:Array<ToolCall> = [];
 			for (idx in toolOrder) {
@@ -223,7 +227,10 @@ class Deepseek implements IApi {
 			if (s == "" || s.charAt(0) == ":") return; // 空行 / 注释(keep-alive)
 			if (!StringTools.startsWith(s, "data:")) return;
 			var data = StringTools.trim(s.substr(5));
-			if (data == "[DONE]") return;
+			if (data == "[DONE]") {
+				sawDone = true;
+				return;
+			}
 			try {
 				handleChunk(Json.parse(data));
 			} catch (e:Dynamic) {

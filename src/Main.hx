@@ -10,7 +10,6 @@ import api.tools.ToolRegistry;
 import api.tools.Write;
 import api.tools.Edit;
 import api.tools.Find;
-import api.tools.Grep;
 import api.tools.Bash;
 import api.tools.Tree;
 import cli.LineResult;
@@ -57,7 +56,7 @@ class Main {
 		}
 
 		// ---- 注册工具 + 组装循环 ----
-		var tools = new ToolRegistry().add(new Read()).add(new Write()).add(new Edit()).add(new Find()).add(new Grep())
+		var tools = new ToolRegistry().add(new Read()).add(new Write()).add(new Edit()).add(new Find())
 			.add(new Bash()).add(new Tree());
 		taskLoop = new TaskLoop(api, tools, {
 			systemPrompt: config.systemPrompt(),
