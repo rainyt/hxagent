@@ -26,7 +26,7 @@ import api.tools.ToolRegistry;
  */
 class TaskLoop {
 	static inline var DEFAULT_MAX_ITERATIONS = 10;
-	static inline var DEFAULT_SYSTEM_PROMPT = "你是一个运行在终端里的 AI 助手，可以使用工具读取本机文件。请用中文简洁回答。";
+	static inline var DEFAULT_SYSTEM_PROMPT = "你是一个运行在终端里的 AI 助手，可以使用工具读取/修改本机文件、执行命令。请用中文简洁回答。";
 
 	var api:IApi;
 	var tools:ToolRegistry;
@@ -42,10 +42,40 @@ class TaskLoop {
 		reset();
 	}
 
-	/** 清空上下文，仅保留 system prompt。 */
+	/** 清空上下文，仅保留 system prompt（含运行环境信息）。 */
 	public function reset():Void {
-		var sys = options.systemPrompt != null ? options.systemPrompt : DEFAULT_SYSTEM_PROMPT;
-		history = [Messages.system(sys)];
+		var base = options.systemPrompt != null ? options.systemPrompt : DEFAULT_SYSTEM_PROMPT;
+		history = [Messages.system(base + "\n\n" + environmentInfo())];
+	}
+
+	/** 组装当前运行环境参数，追加到 system prompt 末尾。 */
+	function environmentInfo():String {
+		var cwd = normalizePath(Sys.getCwd());
+		var d = Date.now();
+		var sb = new StringBuf();
+		sb.add("## 运行环境");
+		sb.add("\n- 操作系统: " + Sys.systemName());
+		sb.add("\n- 当前工作目录: " + cwd);
+		sb.add("\n- 路径风格: 统一使用 / 作为分隔符（例如 " + cwd + "/src）");
+		sb.add("\n- 当前日期: " + d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()));
+		if (Sys.systemName() == "Windows")
+			sb.add("\n- 备注: Windows 环境；Bash 工具依赖 Git Bash（bash 需在 PATH 中）。");
+		if (toolDefs != null && toolDefs.length > 0) {
+			var names = [for (t in toolDefs) t.name];
+			sb.add("\n- 可用工具: " + names.join(", "));
+		}
+		return sb.toString();
+	}
+
+	static inline function normalizePath(p:String):String {
+		var s = StringTools.replace(p, "\\", "/");
+		while (s.length > 1 && s.charAt(s.length - 1) == "/" && s.charAt(s.length - 2) != ":")
+			s = s.substr(0, s.length - 1);
+		return s;
+	}
+
+	static function pad2(n:Int):String {
+		return n < 10 ? "0" + n : "" + n;
 	}
 
 	public function getHistory():Array<Message> {

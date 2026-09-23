@@ -5,3 +5,4 @@
 *.hxml.d/
 dump/
 test.txt
+sample/snake.py
