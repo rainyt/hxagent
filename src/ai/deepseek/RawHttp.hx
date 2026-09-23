@@ -40,6 +40,7 @@ import sys.net.Socket;
 
 class RawHttp extends haxe.http.HttpBase {
 	public var noShutdown:Bool;
+	/** 连接/读写超时（秒）。<= 0 表示**不设超时**（长任务、流式响应推荐）。 */
 	public var cnxTimeout:Float;
 	public var responseHeaders:Map<String, String>;
 
@@ -126,7 +127,8 @@ class RawHttp extends haxe.http.HttpBase {
 			} else {
 				sock = new Socket();
 			}
-			sock.setTimeout(cnxTimeout);
+			if (cnxTimeout > 0) // <= 0 不设超时，避免长任务被 eval 的不可捕获 ETIMEDOUT 杀死
+				sock.setTimeout(cnxTimeout);
 		}
 		var host = url_regexp.matched(2);
 		var portString = url_regexp.matched(3);
@@ -311,7 +313,8 @@ class RawHttp extends haxe.http.HttpBase {
 		var b = new haxe.io.BytesBuffer();
 		var k = 4;
 		var s = haxe.io.Bytes.alloc(4);
-		sock.setTimeout(cnxTimeout);
+		if (cnxTimeout > 0)
+			sock.setTimeout(cnxTimeout);
 		while (true) {
 			var p = 0;
 			while (p != k) {

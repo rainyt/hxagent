@@ -70,7 +70,10 @@ class Deepseek implements IApi {
 		this.config = config != null ? config : {};
 		this.baseUrl = stripSlash(this.config.baseUrl != null ? this.config.baseUrl : DEFAULT_BASE_URL);
 		this.defaultModel = this.config.defaultModel != null ? this.config.defaultModel : DEFAULT_MODEL;
-		this.timeoutMs = this.config.timeoutMs != null ? this.config.timeoutMs : 120000;
+		// 默认不设 socket 超时（长任务 / 流式响应）；显式配置 timeout_ms > 0 才启用。
+		// 注意：eval 上 socket 超时会抛不可捕获的 ETIMEDOUT 直接杀进程，长任务一律不要设。
+		// this.timeoutMs = this.config.timeoutMs != null ? this.config.timeoutMs : 0;
+        this.timeoutMs = 0;
 		this.apiKey = this.config.apiKey != null ? this.config.apiKey : "";
 	}
 
@@ -249,7 +252,7 @@ class Deepseek implements IApi {
 		});
 
 		var http = new RawHttp(baseUrl + "/chat/completions");
-		http.cnxTimeout = timeoutMs / 1000;
+		http.cnxTimeout = timeoutMs > 0 ? timeoutMs / 1000 : 0;
 		http.setHeader("Content-Type", "application/json");
 		http.setHeader("Accept", stream ? "text/event-stream" : "application/json");
 		http.setHeader("Authorization", "Bearer " + apiKey);
@@ -268,7 +271,12 @@ class Deepseek implements IApi {
 			onEvent(Error(buildApiError(e, statusFromMessage(e), sink.bodyString())));
 		};
 
-		http.customRequest(true, sink);
+		try {
+			http.customRequest(true, sink);
+		} catch (e:Dynamic) {
+			// 读取超时（ETIMEDOUT）或连接被中断：转成正常错误事件，避免整个进程崩溃
+			fail("网络中断（可能是读取超时/连接被关闭）: " + Std.string(e));
+		}
 
 		return {
 			cancel: function() cancelled = true
@@ -278,7 +286,7 @@ class Deepseek implements IApi {
 	public function listModels(onResult:ApiResult<Array<ModelInfo>>->Void):Cancelable {
 		var cancelled = false;
 		var http = new RawHttp(baseUrl + "/models");
-		http.cnxTimeout = timeoutMs / 1000;
+		http.cnxTimeout = timeoutMs > 0 ? timeoutMs / 1000 : 0;
 		http.setHeader("Authorization", "Bearer " + apiKey);
 		http.setHeader("Accept", "application/json");
 		applyHeaders(http);
@@ -294,7 +302,15 @@ class Deepseek implements IApi {
 			failed = true;
 			onResult(Failure(buildApiError(e, statusFromMessage(e), body)));
 		};
-		http.request(false);
+		try {
+			http.request(false);
+		} catch (e:Dynamic) {
+			if (!failed) {
+				failed = true;
+				onResult(Failure({message: "网络中断: " + Std.string(e), status: status, raw: body}));
+			}
+			return {cancel: function() cancelled = true};
+		}
 
 		if (!failed) {
 			if (body == null) {

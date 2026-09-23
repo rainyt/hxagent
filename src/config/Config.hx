@@ -19,7 +19,7 @@ import sys.io.File;
  *     "model": "deepseek-chat",
  *     "temperature": 1.0,
  *     "max_tokens": 4096,
- *     "timeout_ms": 120000,
+ *     "timeout_ms": 0,        // <=0 表示不超时（长任务/流式推荐）
  *     "max_retries": 2,
  *     "organization": "org-xxx",
  *     "headers": { "X-Custom": "v" }

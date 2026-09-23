@@ -116,6 +116,7 @@ class TaskLoop {
 				maxTokens: options.maxTokens
 			};
 
+			try {
 			api.chat(request, function(e) switch e {
 				case Start(_, _):
 				// 忽略
@@ -139,6 +140,14 @@ class TaskLoop {
 					failed = true;
 					onEvent(AgentEvent.Error(err));
 			});
+			} catch (e:Dynamic) {
+				// 兜底：任何适配器抛出的异常（超时/网络等）都不应让整个 Agent 崩掉
+				failed = true;
+				onEvent(AgentEvent.Error({
+					message: "请求异常: " + Std.string(e),
+					retryable: false
+				}));
+			}
 
 			if (failed)
 				return;
