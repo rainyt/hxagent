@@ -1,5 +1,7 @@
 package;
 
+import api.tools.Read;
+import api.tools.ToolRegistry;
 import ai.deepseek.Deepseek;
 import api.IApi;
 import api.Message;
@@ -79,9 +81,11 @@ class Main {
 		var textStarted = false;
 		var finished = false;
 
-		api.chat({messages: history, stream: true}, function(e) switch e {
+		var tools = new ToolRegistry().add(new Read());
+
+		api.chat({messages: history, tools: tools.definitions(), stream: true}, function(e) switch e {
 			case Start(_, _):
-			// 忽略
+				// 忽略
 
 			case ReasoningDelta(t):
 				if (!reasoningStarted) {
@@ -99,7 +103,7 @@ class Main {
 				Sys.print(t);
 
 			case ToolCallDelta(_, _, _, _):
-			// 测试阶段暂不处理工具调用
+				// 测试阶段暂不处理工具调用
 
 			case Done(r):
 				finished = true;
@@ -107,16 +111,23 @@ class Main {
 				Sys.println("");
 				history.push(r.message);
 				if (r.usage != null) {
-					Sys.println(ESC + "[90m[token " + r.usage.promptTokens + "+" + r.usage.completionTokens
-						+ "=" + r.usage.totalTokens + "]" + ESC + "[0m");
+					Sys.println(ESC
+						+ "[90m[token "
+						+ r.usage.promptTokens
+						+ "+"
+						+ r.usage.completionTokens
+						+ "="
+						+ r.usage.totalTokens
+						+ "]"
+						+ ESC
+						+ "[0m");
 				}
 
 			case Error(err):
 				finished = true;
 				Sys.print(ESC + "[0m");
 				Sys.println("");
-				Sys.println("错误: " + err.message
-					+ (err.status != null && err.status > 0 ? " (HTTP " + err.status + ")" : ""));
+				Sys.println("错误: " + err.message + (err.status != null && err.status > 0 ? " (HTTP " + err.status + ")" : ""));
 				// 调用失败则回滚本轮用户消息，避免污染上下文
 				history.pop();
 		});
