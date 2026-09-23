@@ -27,7 +27,24 @@ class Bash implements ITool {
 	/** 输出上限（字节），超出会截断。 */
 	static inline var MAX_OUTPUT = 64 * 1024;
 
-	static var bashAvailable:Null<Bool> = null;
+	/** 调试日志开关（环境变量 HXAGENT_DEBUG=1/true 打开，或直接置 true）。 */
+	public static var verbose:Bool = false;
+	static var debugInited = false;
+
+	/** 解析到的 bash 可执行文件；null 表示未找到。 */
+	static var bashPath:String = null;
+	static var bashResolved = false;
+
+	static function initDebug():Void {
+		if (debugInited) return;
+		debugInited = true;
+		var v = Sys.getEnv("HXAGENT_DEBUG");
+		if (v == "1" || v == "true") verbose = true;
+	}
+
+	static function log(msg:String):Void {
+		if (verbose) Sys.stderr().writeString("[bash] " + msg + "\n");
+	}
 
 	public var definition:ToolDefinition;
 
@@ -59,23 +76,35 @@ class Bash implements ITool {
 		var timeoutMs = intArg(pick(args, ["timeout_ms", "timeoutMs"]), DEFAULT_TIMEOUT);
 		if (timeoutMs < 0) timeoutMs = 0;
 		var cwd:String = args.cwd != null ? Std.string(args.cwd) : null;
-		if (!hasBash())
-			return fail("未找到 bash。本工具依赖 bash（Windows 上请安装 Git Bash 并确保其在 PATH 中）。");
+		initDebug();
+		log('execute: command="${oneLine(command)}" cwd=${cwd != null ? cwd : "(默认)"} timeout=${timeoutMs}ms');
+
+		var bash = findBash();
+		if (bash == null) {
+			var diag = diagnose();
+			Sys.stderr().writeString("[bash] 未找到 bash，诊断:\n" + diag + "\n");
+			return fail("未找到 bash。本工具依赖 bash（Windows 请安装 Git Bash）。诊断:\n" + diag);
+		}
 
 		var script = buildScript(command, cwd, timeoutMs);
+		log('使用 bash=$bash，脚本 ${Bytes.ofString(script).length} 字节');
 
+		var start = Sys.time();
 		var proc:Process;
 		try {
-			proc = new Process("bash", ["-c", script]);
+			proc = new Process(bash, ["-c", script]);
 		} catch (e:Dynamic) {
-			return fail('无法启动 bash: ' + Std.string(e));
+			log("启动失败: " + Std.string(e));
+			return fail('无法启动 bash ($bash): ' + Std.string(e));
 		}
 
 		// stderr 已在脚本内合并到 stdout，只需读一路，不会死锁
 		var output = "";
 		try {
 			output = Utf8.safe(proc.stdout.readAll());
-		} catch (e:Dynamic) {}
+		} catch (e:Dynamic) {
+			log("读取输出异常: " + Std.string(e));
+		}
 
 		var code = 0;
 		try {
@@ -84,6 +113,7 @@ class Bash implements ITool {
 		try proc.close() catch (e:Dynamic) {};
 
 		var timedOut = code == 124;
+		log('完成: exit=$code 超时=$timedOut 输出=${Bytes.ofString(output).length}字节 耗时=${Std.int((Sys.time() - start) * 1000)}ms');
 
 		return {
 			content: render(output, code, timedOut, timeoutMs),
@@ -155,10 +185,119 @@ class Bash implements ITool {
 	// shell
 	// ------------------------------------------------------------------
 
-	static function hasBash():Bool {
-		if (bashAvailable == null)
-			bashAvailable = probe("bash");
-		return bashAvailable;
+	/** 定位 bash（结果缓存），首次定位时向 stderr 输出一行结果，便于排障。 */
+	public static function findBash():Null<String> {
+		if (bashResolved) return bashPath;
+		bashResolved = true;
+		initDebug();
+		bashPath = locateBash();
+		if (bashPath != null)
+			Sys.stderr().writeString("[bash] 定位 bash: " + bashPath + "\n");
+		else
+			Sys.stderr().writeString("[bash] 未找到 bash\n" + diagnose() + "\n");
+		return bashPath;
+	}
+
+	static function locateBash():Null<String> {
+		log("系统=" + Sys.systemName() + " cwd=" + Sys.getCwd());
+
+		// 1) 交给系统 PATH 查找
+		if (probe("bash")) {
+			bashPath = "bash";
+			log("PATH 命中: bash");
+			return bashPath;
+		}
+		if (probe("bash.exe")) {
+			bashPath = "bash.exe";
+			log("PATH 命中: bash.exe");
+			return bashPath;
+		}
+
+		// 2) 遍历 PATH 各目录
+		var envPath = Sys.getEnv("PATH");
+		if (envPath != null) {
+			var sep = Sys.systemName() == "Windows" ? ";" : ":";
+			for (dir in envPath.split(sep)) {
+				if (dir == null || StringTools.trim(dir) == "") continue;
+				var cand = addSlash(dir) + "bash" + (Sys.systemName() == "Windows" ? ".exe" : "");
+				if (sys.FileSystem.exists(cand) && probe(cand)) {
+					bashPath = cand;
+					log("PATH 目录命中: " + cand);
+					return bashPath;
+				}
+			}
+		}
+
+		// 3) 常见 Git for Windows 安装位置
+		for (cand in commonBashPaths()) {
+			if (sys.FileSystem.exists(cand)) {
+				if (probe(cand)) {
+					bashPath = cand;
+					log("常见位置命中: " + cand);
+					return bashPath;
+				}
+				log("存在但不可用: " + cand);
+			} else {
+				log("不存在: " + cand);
+			}
+		}
+
+		log("未找到 bash");
+		return null;
+	}
+
+	/** 常见 bash 安装路径（供查找与诊断）。 */
+	static function commonBashPaths():Array<String> {
+		var out = new Array<String>();
+		var pf = Sys.getEnv("ProgramFiles");
+		var pf86 = Sys.getEnv("ProgramFiles(x86)");
+		var local = Sys.getEnv("LOCALAPPDATA");
+		if (pf != null) {
+			out.push(slash(pf + "/Git/bin/bash.exe"));
+			out.push(slash(pf + "/Git/usr/bin/bash.exe"));
+		}
+		if (pf86 != null) out.push(slash(pf86 + "/Git/bin/bash.exe"));
+		if (local != null) out.push(slash(local + "/Programs/Git/bin/bash.exe"));
+		out.push("C:/Program Files/Git/bin/bash.exe");
+		out.push("C:/Program Files/Git/usr/bin/bash.exe");
+		out.push("C:/msys64/usr/bin/bash.exe");
+		return out;
+	}
+
+	/** 环境诊断信息（供 /diag 或排障）。 */
+	public static function diagnose():String {
+		var sb = new StringBuf();
+		sb.add("- 系统: " + Sys.systemName() + "\n");
+		sb.add("- cwd: " + Sys.getCwd() + "\n");
+		var envPath = Sys.getEnv("PATH");
+		if (envPath != null) {
+			var sep = Sys.systemName() == "Windows" ? ";" : ":";
+			var parts = envPath.split(sep);
+			sb.add("- PATH(" + parts.length + " 项): " + parts.slice(0, 8).join(" | ") + (parts.length > 8 ? " ..." : "") + "\n");
+		} else {
+			sb.add("- PATH: (空)\n");
+		}
+		var found = findBash();
+		sb.add("- bash: " + (found != null ? found : "未找到") + "\n");
+		sb.add("- 常见位置检查:\n");
+		for (cand in commonBashPaths())
+			sb.add("    [" + (sys.FileSystem.exists(cand) ? "存在" : "缺失") + "] " + cand + "\n");
+		return sb.toString();
+	}
+
+	static function addSlash(s:String):String {
+		if (s.length == 0) return s;
+		var c = s.charAt(s.length - 1);
+		return (c == "/" || c == "\\") ? s : s + "/";
+	}
+
+	static function slash(s:String):String {
+		return StringTools.replace(s, "\\", "/");
+	}
+
+	static function oneLine(s:String):String {
+		var t = StringTools.replace(StringTools.replace(s, "\r", ""), "\n", " ⏎ ");
+		return t.length > 120 ? t.substr(0, 120) + " ..." : t;
 	}
 
 	static function probe(exe:String):Bool {
@@ -168,6 +307,7 @@ class Bash implements ITool {
 			p.close();
 			return c == 0;
 		} catch (e:Dynamic) {
+			log("probe 失败: " + exe + " (" + Std.string(e) + ")");
 			return false;
 		}
 	}

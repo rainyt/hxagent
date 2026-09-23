@@ -85,6 +85,8 @@ class Main {
 						case "/reset":
 							taskLoop.reset();
 							Sys.println("已清空上下文。");
+						case "/diag":
+							Sys.println(Bash.diagnose());
 						default:
 							handle(input);
 					}
