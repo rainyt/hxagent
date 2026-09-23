@@ -22,7 +22,7 @@ class Main {
 
 		var model = Sys.getEnv("DEEPSEEK_MODEL");
 		api = new Deepseek({
-			defaultModel: model != null ? model : "deepseek-chat",
+			defaultModel: model != null ? model : "deepseek-v4-flash",
 			apiKey: "sk-5c311a3bb0be4289bb25380358cd53e3"
 		});
 
